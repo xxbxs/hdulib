@@ -2,6 +2,7 @@ import asyncio
 import base64
 import datetime as dt
 import hashlib
+import time
 from time import sleep
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import unquote
@@ -12,6 +13,8 @@ from pydantic import BaseModel
 
 
 class Task(BaseModel):
+    user_name: str = ""
+    password: str = ""
     floor_id: Optional[Union[str, int]] = None
     seat_number: Optional[Union[str, int]] = None
     begin_time: Optional[Union[str, int]] = None
@@ -20,14 +23,8 @@ class Task(BaseModel):
     interval: Optional[int] = 2
 
 
-class User(BaseModel):
-    user_name: str
-    password: str
-    tasks: Optional[List[Task]] = []
-
-
-def create_session() -> httpx.AsyncClient:
-    session = httpx.AsyncClient()
+def create_session() -> httpx.Client:
+    session = httpx.Client()
     session.headers = config_data.get("init_headers")
     session.params = {"LAB_JSON": "1"}
     return session
@@ -51,7 +48,7 @@ def seat_msg_paser(msg: Dict) -> None:
         )
 
 
-async def get_seat_by_room_and_floor(
+def get_seat_by_room_and_floor(
     rooms: Dict[str, Dict[str, Dict[str, Dict[str, int]]]],
     floor_id: str,
     seat_number: int,
@@ -86,14 +83,20 @@ config_data = load_config()
 
 
 class HDULIB:
-    def __init__(self, user: User) -> None:
+    rooms = None
+
+    def __init__(self, task: Task) -> None:
         self.session = create_session()
-        self.tasks = user.tasks
+        self.task = task
         self.url_list = config_data.get("url")
         self.uid = 0
-        self.user = user
+        self.login()
+        if HDULIB.rooms is None:
+            print("fetch rooms data ...")
+            HDULIB.rooms = self.get_rooms_dict()
+            print("fetch rooms data done.")
 
-    async def fetch(
+    def fetch(
         self,
         method: str,
         url: str,
@@ -102,20 +105,20 @@ class HDULIB:
         _tojson: bool = False,
     ) -> Any:
         if method.lower() == "get":
-            res = await self.session.get(url, params=params)
+            res = self.session.get(url, params=params)
         elif method.lower() == "post":
-            res = await self.session.post(url, data=data)
+            res = self.session.post(url, data=data)
 
         return res.json() if _tojson else res
 
-    async def login(self) -> str:
+    def login(self) -> str:
         login_data = {
-            "login_name": self.user.user_name,
+            "login_name": self.task.user_name,
             "org_id": "104",
-            "password": self.user.password,
+            "password": self.task.password,
         }
 
-        res = await self.fetch(
+        res = self.fetch(
             "post",
             self.url_list["LOGIN_URL"],
             data=login_data,
@@ -128,19 +131,19 @@ class HDULIB:
 
         return res
 
-    async def get_seat_data(
+    def get_seat_data(
         self,
         seat_number: Optional[Union[str, int]],
         space_id: Optional[Union[str, int]],
     ) -> dict:
         seat_param = {
-            "seat_id": await get_seat_by_room_and_floor(space_id, seat_number),
+            "seat_id": get_seat_by_room_and_floor(space_id, seat_number),
             "space_id": space_id,
             "library_id": "104",
             "LAB_JSON": "1",
         }
 
-        res = await self.fetch(
+        res = self.fetch(
             "get",
             self.url_list["SEAT_CHECK_STATE_URL"],
             params=seat_param,
@@ -153,8 +156,8 @@ class HDULIB:
 
         return res
 
-    async def __queryRooms(self):
-        queryRoomsRes = await self.fetch(
+    def __queryRooms(self):
+        queryRoomsRes = self.fetch(
             "get", self.url_list["CATEGORY_LIST_URL"], _tojson=True
         )
 
@@ -163,7 +166,7 @@ class HDULIB:
         rooms = {x["name"]: unquote(x["link"]["url"]).split("?")[1] for x in rawRooms}
 
         for room in rooms.keys():
-            _room_res = await self.fetch(
+            _room_res = self.fetch(
                 "get",
                 f"{self.url_list['SEARCH_SEATS_URL']}?{rooms[room]}",
                 _tojson=True,
@@ -175,11 +178,11 @@ class HDULIB:
 
             rooms[room] = _room
 
-            await asyncio.sleep(2)
+            sleep(2)
 
         return rooms
 
-    async def __querySeats(self, rooms: dict):
+    def __querySeats(self, rooms: dict):
         _time = dt.datetime.now()
 
         ret_room_dict = dict()
@@ -202,7 +205,7 @@ class HDULIB:
                 "space_category[content_id]": room_data["space_category"]["content_id"],
             }
 
-            resp = await self.fetch(
+            resp = self.fetch(
                 "post", self.url_list["SEARCH_SEATS_URL"], data=data, _tojson=True
             )
 
@@ -220,14 +223,14 @@ class HDULIB:
 
             ret_room_dict[room_name] = room_data["floors"]
 
-            await asyncio.sleep(2)
+            time.sleep(1)
 
         return ret_room_dict
 
-    async def get_rooms_dict(self):
-        return await self.__querySeats(await self.__queryRooms())
+    def get_rooms_dict(self):
+        return self.__querySeats(self.__queryRooms())
 
-    async def confirm_seat(
+    def confirm_seat(
         self,
         beginTime: int,
         duration: int,
@@ -254,7 +257,7 @@ class HDULIB:
 
         self.session.headers["Api-Token"] = str_g
 
-        res = await self.fetch(
+        res = self.fetch(
             "post",
             self.url_list["RESERVE_SEAT_URL"],
             data=confirm_data,
