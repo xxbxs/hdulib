@@ -14,6 +14,7 @@ from utils.hdulib import (
 
 
 async def run(user: HDULIB):
+    await user.login()
     rooms = await user.get_rooms_dict()
     for idx, task in enumerate(user.tasks):
         seat_id = get_seat_by_room_and_floor(rooms, task.floor_id, task.seat_number)
@@ -78,7 +79,6 @@ def parse_config(config: str) -> User:
 
 async def main():
     config = os.environ.get("CONFIG", "")
-    print(config)
     user = HDULIB(parse_config(config))
     await run(user)
 
