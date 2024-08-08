@@ -2,7 +2,7 @@ name: hdulib
 
 on:
   schedule:
-    - cron: "50 19 * * *"
+    - cron: "50 11 * * *"
   workflow_dispatch:
 
 jobs:
@@ -26,4 +26,4 @@ jobs:
       - name: Run main script
         env:
           CONFIG: ${{ secrets.CONFIG }}
-        run: python main.py
+        run: timeout 30min python main.py
