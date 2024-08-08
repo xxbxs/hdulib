@@ -23,7 +23,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Set timezone to Asia/Shanghai
+        run: |
+          sudo ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+          sudo dpkg-reconfigure -f noninteractive tzdata
+
       - name: Run main script
         env:
           CONFIG: ${{ secrets.CONFIG }}
-        run: timeout 30min python main.py
+        run: timeout 900 python main.py
