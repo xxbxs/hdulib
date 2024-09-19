@@ -26,7 +26,10 @@ def create_task_from_config(config_dict: dict) -> Task:
         password=password,
         floor_id=floor_id,
         seat_number=seat_number,
-        begin_time=(dt.datetime.now() + dt.timedelta(days=2))
+        begin_time=(
+            dt.datetime.now()
+            + dt.timedelta(days=(1 if floor_id in ["1547", "1548"] else 2))
+        )
         .replace(hour=begin_time, minute=0, second=0, microsecond=0)
         .timestamp(),
         duration=duration,
@@ -62,8 +65,10 @@ async def run(task: Task):
     if task.begin_time < dt.datetime.now().timestamp():
         print(f"user_name: {task.user_name} begin_time 已调整到下一天")
         task.begin_time += int(dt.timedelta(days=1).total_seconds())
-
-    if dt.datetime.fromtimestamp(task.begin_time).day - 1 > dt.datetime.now().day:
+    if (
+        dt.datetime.fromtimestamp(task.begin_time).day
+        - (1 if task.floor_id in ["1547", "1548"] else 2)
+    ) == dt.datetime.now().day:
         if dt.datetime.now().hour < 20:
             print("等待到20点开始执行")
             await asyncio.sleep(
@@ -88,7 +93,6 @@ def get_config() -> str:
 
 async def main():
     config = get_config()
-
     tasks = parse_config(config)
     await asyncio.gather(*(run(task) for task in tasks))
 
