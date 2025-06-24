@@ -51,17 +51,17 @@ class BookingService:
         tasks = []
 
         # 确定开始时间是小时格式还是时间戳格式
-        if task.begin_time <= 23:  # 小时格式 (0-23)
+        if int(task.begin_time) <= 23:
             start_time = datetime.now() + timedelta(days=task.days_ahead)
             current_begin_hour = task.begin_time
             remaining_duration = task.duration
 
-            while remaining_duration > 0:
+            while int(remaining_duration) > 0:
                 # 计算这次任务的持续时间
                 task_duration = min(remaining_duration, task.max_duration_per_task)
 
                 # 防止无限循环
-                if task_duration <= 0:
+                if int(task_duration) <= 0:
                     logger.error(
                         "Task duration is 0, breaking to prevent infinite loop"
                     )

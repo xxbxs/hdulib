@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import toml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
 
@@ -113,23 +113,6 @@ class BookingTask(BaseModel):
     duration: int = Field(..., ge=1, le=12, description="持续时间（小时）")
     max_trials: int = Field(default=3, ge=1, le=100, description="最大尝试次数")
     interval: int = Field(default=2, ge=1, le=60, description="重试间隔（秒）")
-
-    @field_validator("begin_time")
-    @classmethod
-    def validate_begin_time(cls, v):
-        # 允许小时格式(0-23) 或时间戳格式(大于1000000000)
-        if not ((0 <= v <= 23) or v > 1000000000):
-            raise ValueError(
-                "begin_time must be between 0-23 (hours) or a valid timestamp"
-            )
-        return v
-
-    @field_validator("duration")
-    @classmethod
-    def validate_duration(cls, v):
-        if not (1 <= v <= 12):
-            raise ValueError("duration must be between 1-12 hours")
-        return v
 
     @property
     def days_ahead(self) -> int:

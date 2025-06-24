@@ -419,10 +419,6 @@ class LibraryAPIClient:
             logger.error("User not logged in")
             return "not_logged_in"
 
-        if begin_time <= 0 or duration <= 0 or seat_id <= 0:
-            logger.error("Invalid parameters for seat confirmation")
-            return "invalid_parameters"
-
         confirm_data = {
             "api_time": str(
                 int(datetime.now().replace(second=0, minute=0).timestamp())
@@ -439,7 +435,14 @@ class LibraryAPIClient:
             api_token = self._generate_api_token(confirm_data)
             self.session.headers["Api-Token"] = api_token
 
-            response = await self.request("post", "reserve_seat", data=confirm_data)
+            response = await self.request(
+                "post",
+                "reserve_seat",
+                params={
+                    "LAB_JSON": "1",
+                },
+                data=confirm_data,
+            )
             return self._handle_booking_response(
                 response, seat_id, begin_time, duration
             )
@@ -484,60 +487,3 @@ class LibraryAPIClient:
         except Exception as e:
             logger.error(f"Error handling booking response: {e}")
             return "response_error"
-
-
-# 为了向后兼容，提供一个同步包装器
-class SyncLibraryAPIClient:
-    """同步包装器，用于向后兼容"""
-
-    def __init__(self, config_manager: ConfigManager):
-        self.async_client = LibraryAPIClient(config_manager)
-        self._loop = None
-
-    def __enter__(self):
-        self._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._loop)
-        self._loop.run_until_complete(self.async_client.__aenter__())
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._loop:
-            self._loop.run_until_complete(
-                self.async_client.__aexit__(exc_type, exc_val, exc_tb)
-            )
-            self._loop.close()
-
-    def login(self, username: str, password: str) -> Optional[str]:
-        if not self._loop:
-            raise RuntimeError("Context manager not properly initialized")
-        return self._loop.run_until_complete(
-            self.async_client.login(username, password)
-        )
-
-    def get_seat_id(self, floor_id: str, seat_number: str) -> int:
-        if not self._loop:
-            raise RuntimeError("Context manager not properly initialized")
-        return self._loop.run_until_complete(
-            self.async_client.get_seat_id(floor_id, seat_number)
-        )
-
-    def confirm_seat(self, begin_time: int, duration: int, seat_id: int) -> str:
-        if not self._loop:
-            raise RuntimeError("Context manager not properly initialized")
-        return self._loop.run_until_complete(
-            self.async_client.confirm_seat(begin_time, duration, seat_id)
-        )
-
-    def clear_rooms_cache(self):
-        """清空房间缓存"""
-        if not self._loop:
-            raise RuntimeError("Context manager not properly initialized")
-        return self._loop.run_until_complete(self.async_client.clear_rooms_cache())
-
-    def get_rooms_dict(self, force_refresh: bool = False) -> Dict:
-        """获取房间字典（同步版本）"""
-        if not self._loop:
-            raise RuntimeError("Context manager not properly initialized")
-        return self._loop.run_until_complete(
-            self.async_client.get_rooms_dict(force_refresh)
-        )
