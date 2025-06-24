@@ -151,7 +151,7 @@ def book():
     try:
         import os
 
-        config_content = os.environ.get("config", "")
+        config_content = os.environ.get("CONFIG", "")
 
         # 解析配置
         with console.status("[bold green]🔍 Parsing configuration..."):
