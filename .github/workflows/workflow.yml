@@ -1,5 +1,4 @@
 name: hdulib
-
 on:
   schedule:
     - cron: "50 11 * * *"
@@ -11,17 +10,20 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v4
         with:
           python-version: "3.12"
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+        run: uv sync --frozen
 
       - name: Set timezone to Asia/Shanghai
         run: |
@@ -31,4 +33,4 @@ jobs:
       - name: Run main script
         env:
           CONFIG: ${{ secrets.CONFIG }}
-        run: timeout 900 python main.py
+        run: timeout 900 uv run main.py book
