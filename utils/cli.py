@@ -51,12 +51,21 @@ def display_task_summary(tasks: list[BookingTask]) -> None:
     print("=" * 90)
 
     # 表头
-    headers = ["User", "Floor", "Seat", "Booking Time", "Duration", "Trials", "Interval"]
+    headers = [
+        "User",
+        "Floor",
+        "Seat",
+        "Booking Time",
+        "Duration",
+        "Trials",
+        "Interval",
+    ]
     widths = [12, 8, 6, 18, 10, 8, 10]
 
     # 打印表头
     header_line = "".join(h.ljust(w) for h, w in zip(headers, widths))
     from utils.console import Colors
+
     console.print(header_line, Colors.BLUE + Colors.BOLD)
     print("-" * 90)
 
@@ -70,7 +79,7 @@ def display_task_summary(tasks: list[BookingTask]) -> None:
             begin_dt.strftime("%Y-%m-%d %H:%M")[:17],
             f"{task.duration}h"[:9],
             str(task.max_trials)[:7],
-            f"{task.interval}s"[:9]
+            f"{task.interval}s"[:9],
         ]
         row_line = "".join(cell.ljust(w) for cell, w in zip(row, widths))
         print(row_line)
@@ -93,6 +102,7 @@ def display_results(results: list[BookingResult]) -> None:
 
     # 打印表头
     from utils.console import Colors
+
     header_line = "".join(h.ljust(w) for h, w in zip(headers, widths))
     console.print(header_line, Colors.GREEN + Colors.BOLD)
     print("-" * 100)
@@ -115,7 +125,7 @@ def display_results(results: list[BookingResult]) -> None:
             booking_time[:17],
             duration[:9],
             attempts[:9],
-            str(details)[:24]
+            str(details)[:24],
         ]
 
         row_line = "".join(cell.ljust(w) for cell, w in zip(row, widths))
@@ -174,6 +184,7 @@ def book_command():
 
     except Exception as e:
         import traceback
+
         console.error(f"Unexpected error: {e}")
         console.error(f"Traceback: {traceback.format_exc()}")
         logger.error(f"Booking command error: {e}")
