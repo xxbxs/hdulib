@@ -6,10 +6,39 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "httpx>=0.28.1",
-    "loguru>=0.7.3",
     "pydantic>=2.11.7",
     "pydantic-settings>=2.10.0",
-    "rich>=14.0.0",
     "toml>=0.10.2",
-    "typer>=0.16.0",
 ]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+# Preview features for better formatting
+preview = true
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-wrap-aliases = true
+split-on-trailing-comma = true
+
+# Enable more strict formatting rules
+[tool.ruff.lint.flake8-comprehensions]
+allow-dict-calls-with-keyword-arguments = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = ["pre-commit>=4.3.0"]

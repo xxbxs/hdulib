@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Dict, Optional
 
 import toml
 from pydantic_settings import BaseSettings
@@ -9,22 +8,22 @@ class AppConfig(BaseSettings):
     """应用配置"""
 
     # API URLs
-    url: Dict[str, str] = {}
+    url: dict[str, str] = {}
 
     # Headers
-    init_headers: Dict[str, str] = {}
+    init_headers: dict[str, str] = {}
 
     # Room and floor mappings
-    room_name_dict: Dict[str, str] = {}
-    floor_name_dict: Dict[str, str] = {}
-    state_dict: Dict[str, str] = {}
+    room_name_dict: dict[str, str] = {}
+    floor_name_dict: dict[str, str] = {}
+    state_dict: dict[str, str] = {}
 
     # Default values
     org_id: str = "104"
     library_id: str = "104"
 
     # Optional fields that might be in config file
-    title: Optional[str] = None
+    title: str | None = None
 
     model_config = {
         "env_file": ".env",
@@ -60,9 +59,9 @@ class AppConfig(BaseSettings):
 class ConfigManager:
     """配置管理器"""
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: str | None = None):
         self.config_path = config_path or "./utils/config.toml"
-        self._config: Optional[AppConfig] = None
+        self._config: AppConfig | None = None
 
     @property
     def config(self) -> AppConfig:

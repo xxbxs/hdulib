@@ -1,11 +1,9 @@
 import asyncio
 from datetime import datetime, timedelta
-from typing import List
-
-from loguru import logger
 
 from utils.api_client import LibraryAPIClient
 from utils.config import ConfigManager
+from utils.console import logger
 from utils.models import BookingResult, BookingTask
 
 
@@ -13,7 +11,7 @@ class BookingService:
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
 
-    def create_tasks_from_config(self, config_dict: dict) -> List[BookingTask]:
+    def create_tasks_from_config(self, config_dict: dict) -> list[BookingTask]:
         """从配置字典创建任务"""
         # 验证必需字段
         required_fields = [
@@ -43,79 +41,71 @@ class BookingService:
         # 创建基础任务
         base_task = BookingTask(**config_dict)
 
-        # 分割长时间任务
-        return self._split_long_duration_task(base_task)
+        logger.info(f"Created base task with begin_time: {base_task.begin_time}")
 
-    def _split_long_duration_task(self, task: BookingTask) -> List[BookingTask]:
+        # 分割长时间任务（这里会处理时间转换）
+        tasks = self._split_long_duration_task(base_task)
+
+        return tasks
+
+    def _split_long_duration_task(self, task: BookingTask) -> list[BookingTask]:
         """分割长时间任务"""
+        logger.info(
+            f"Processing task with begin_time: {task.begin_time}, duration: {task.duration}, max_duration: {task.max_duration_per_task}"
+        )
+
+        # 首先处理时间转换（如果需要）
+        current_begin_time = task.begin_time
+
+        # 处理小时格式（<=23）转换为时间戳
+        if task.begin_time <= 23:
+            now = datetime.now()
+            target_date = now + timedelta(days=task.days_ahead)
+            booking_datetime = target_date.replace(
+                hour=int(task.begin_time), minute=0, second=0, microsecond=0
+            )
+            current_begin_time = int(booking_datetime.timestamp())
+            logger.info(
+                f"Converted hour {task.begin_time} to datetime: {booking_datetime} (timestamp: {current_begin_time})"
+            )
+
+        # 如果不需要分割，返回时间已转换的单个任务
+        if task.duration <= task.max_duration_per_task:
+            corrected_task = task.model_copy()
+            corrected_task.begin_time = current_begin_time
+            logger.info(
+                f"No split needed, returning single task with corrected time: {current_begin_time}"
+            )
+            return [corrected_task]
+
+        # 需要分割的情况
         tasks = []
+        remaining_duration = task.duration
 
-        # 确定开始时间是小时格式还是时间戳格式
-        if int(task.begin_time) <= 23:
-            start_time = datetime.now() + timedelta(days=task.days_ahead)
-            current_begin_hour = task.begin_time
-            remaining_duration = task.duration
+        while remaining_duration > 0:
+            task_duration = min(remaining_duration, task.max_duration_per_task)
 
-            while int(remaining_duration) > 0:
-                # 计算这次任务的持续时间
-                task_duration = min(remaining_duration, task.max_duration_per_task)
+            if task_duration <= 0:
+                logger.error("Task duration is 0, breaking to prevent infinite loop")
+                break
 
-                # 防止无限循环
-                if int(task_duration) <= 0:
-                    logger.error(
-                        "Task duration is 0, breaking to prevent infinite loop"
-                    )
-                    break
+            sub_task = task.model_copy()
+            sub_task.begin_time = current_begin_time
+            sub_task.duration = task_duration
 
-                # 计算预订时间戳
-                booking_datetime = start_time.replace(
-                    hour=current_begin_hour % 24, minute=0, second=0, microsecond=0
-                )
+            tasks.append(sub_task)
 
-                # 处理跨天情况
-                if current_begin_hour >= 24:
-                    days_to_add = current_begin_hour // 24
-                    booking_datetime += timedelta(days=days_to_add)
-
-                # 创建子任务
-                sub_task = task.model_copy()  # 使用 model_copy 替代 copy
-                sub_task.begin_time = int(booking_datetime.timestamp())
-                sub_task.duration = task_duration
-
-                tasks.append(sub_task)
-
-                remaining_duration -= task_duration
-                current_begin_hour += task_duration
-
-        else:  # 时间戳格式
-            # 如果已经是时间戳，只需要分割持续时间
-            current_timestamp = task.begin_time
-            remaining_duration = task.duration
-
-            while remaining_duration > 0:
-                task_duration = min(remaining_duration, task.max_duration_per_task)
-
-                if task_duration <= 0:
-                    logger.error(
-                        "Task duration is 0, breaking to prevent infinite loop"
-                    )
-                    break
-
-                sub_task = task.model_copy()
-                sub_task.begin_time = current_timestamp
-                sub_task.duration = task_duration
-
-                tasks.append(sub_task)
-
-                remaining_duration -= task_duration
-                current_timestamp += task_duration * 3600  # 增加对应的秒数
-
-        if not tasks:
-            logger.warning("No tasks created, using original task")
-            return [task]
+            remaining_duration -= task_duration
+            current_begin_time += task_duration * 3600
 
         logger.info(f"Split task into {len(tasks)} sub-tasks")
-        return tasks
+
+        # 调试输出：检查返回的任务时间
+        for i, t in enumerate(tasks):
+            dt = datetime.fromtimestamp(t.begin_time)
+            logger.info(f"Task {i + 1}: begin_time={t.begin_time} -> {dt}")
+
+        return tasks or [task]
 
     async def run_booking_task(self, task: BookingTask) -> BookingResult:
         """执行单个预订任务"""
@@ -172,10 +162,20 @@ class BookingService:
             current_time = datetime.now()
             begin_datetime = datetime.fromtimestamp(task.begin_time)
 
+            logger.info(f"Current time: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info(
+                f"Target booking time: {begin_datetime.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            logger.info(f"Days ahead setting: {task.days_ahead}")
+
             # 计算预订窗口开放时间
             booking_opens_day = begin_datetime - timedelta(days=task.days_ahead)
             booking_opens_time = booking_opens_day.replace(
                 hour=20, minute=0, second=0, microsecond=0
+            )
+
+            logger.info(
+                f"Booking window opens at: {booking_opens_time.strftime('%Y-%m-%d %H:%M:%S')}"
             )
 
             if current_time < booking_opens_time:
@@ -261,7 +261,7 @@ class BookingService:
             attempts=task.max_trials,
         )
 
-    async def run_multiple_tasks(self, tasks: List[BookingTask]) -> List[BookingResult]:
+    async def run_multiple_tasks(self, tasks: list[BookingTask]) -> list[BookingResult]:
         """并发执行多个预订任务"""
         if not tasks:
             logger.warning("No tasks provided")

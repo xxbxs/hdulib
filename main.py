@@ -5,23 +5,23 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 try:
-    from utils.cli import app, console
+    from utils.cli import main as cli_main
 except ImportError as e:
-    print(f"❌ Import error: {e}")
+    print(f"Import error: {e}")
     print("Please ensure all dependencies are installed:")
-    print("pip install -r requirements.txt")
+    print("uv sync")
     sys.exit(1)
 
 
 def main():
     """Main entry point for the HDU Library Booking System"""
     try:
-        app()
+        cli_main()
     except KeyboardInterrupt:
-        console.print("\n[yellow]👋 Goodbye![/yellow]")
+        print("\nGoodbye!")
         sys.exit(0)
     except Exception as e:
-        console.print(f"[red]💥 Fatal error: {e}[/red]")
+        print(f"Fatal error: {e}")
         sys.exit(1)
 
 
