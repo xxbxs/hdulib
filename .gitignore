@@ -1,4 +1,9 @@
 
-__pychache__/
+**/__pychache__/**
+*.pyc
 .venv/
+.ruff_cache/
 uv.lock
+
+a.txt
+.env

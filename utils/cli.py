@@ -145,6 +145,10 @@ def book_command():
 
     try:
         config_content = os.environ.get("CONFIG", "")
+        config_file = Path("a.txt")
+
+        if config_file.exists():
+            config_content = config_file.read_text(encoding="utf-8")
 
         if not config_content:
             console.error("No CONFIG environment variable found")

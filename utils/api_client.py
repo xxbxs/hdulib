@@ -1,7 +1,9 @@
 import asyncio
 import base64
 import hashlib
+import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
@@ -121,6 +123,7 @@ class LibraryAPIClient:
             if response.get("CODE") != "ok":
                 error_msg = response.get("MSG", "Unknown error")
                 logger.error(f"Login failed for {username}: {error_msg}")
+                logger.info(f"Login response: {response}")
                 return None
 
             self.uid = response["DATA"]["uid"]
@@ -131,8 +134,18 @@ class LibraryAPIClient:
             logger.error(f"Login error for {username}: {e}")
             return None
 
-    async def get_rooms_dict(self, force_refresh: bool = False) -> dict:
-        """获取房间字典（使用缓存）"""
+    async def get_rooms_dict(
+        self, force_refresh: bool = False, use_json: bool = True
+    ) -> dict:
+        """获取房间字典（支持JSON文件和API缓存）"""
+        # 优先尝试从JSON文件读取
+        if use_json and not force_refresh:
+            json_data = await self._load_rooms_from_json()
+            if json_data:
+                logger.debug("Using rooms data from JSON file")
+                return json_data
+
+        # 如果JSON文件不存在或需要强制刷新，则使用内存缓存
         if not force_refresh:
             cached_data = await self._cache_manager.get_cache()
             if cached_data is not None:
@@ -147,9 +160,81 @@ class LibraryAPIClient:
             logger.error(f"Failed to fetch rooms data: {e}")
             return {}
 
+    async def _load_rooms_from_json(self) -> dict:
+        """从JSON文件加载房间数据"""
+        json_file = Path("./data/rooms_cache.json")
+
+        if not json_file.exists():
+            logger.debug("JSON cache file not found")
+            return {}
+
+        try:
+            with open(json_file, encoding="utf-8") as f:
+                data = json.load(f)
+
+            # 检查数据格式
+            if "rooms" not in data:
+                logger.warning("Invalid JSON cache format")
+                return {}
+
+            # 检查数据是否过期（可选：设置过期时间）
+            if "metadata" in data and "generated_at" in data["metadata"]:
+                generated_time = datetime.fromisoformat(
+                    data["metadata"]["generated_at"]
+                )
+                if datetime.now() - generated_time > timedelta(hours=24):
+                    logger.info(
+                        "JSON cache is older than 24 hours, consider refreshing"
+                    )
+
+            logger.info(f"Loaded rooms data from JSON: {len(data['rooms'])} rooms")
+            return data["rooms"]
+
+        except Exception as e:
+            logger.error(f"Failed to load rooms from JSON: {e}")
+            return {}
+
     async def clear_rooms_cache(self) -> None:
         """清空房间缓存"""
         await self._cache_manager.clear_cache()
+
+    async def update_json_cache(self) -> bool:
+        """更新JSON缓存文件"""
+        try:
+            logger.info("正在更新JSON缓存...")
+            rooms_data = await self.query_rooms()
+            if not rooms_data:
+                logger.error("未能获取房间数据")
+                return False
+
+            seats_data = await self.query_seats(rooms_data)
+            if not seats_data:
+                logger.error("未能获取座位数据")
+                return False
+
+            # 构造完整的数据结构
+            complete_data = {
+                "metadata": {
+                    "generated_at": datetime.now().isoformat(),
+                    "total_rooms": len(seats_data),
+                    "description": "房间和座位数据缓存",
+                },
+                "rooms": seats_data,
+            }
+
+            # 保存到JSON文件
+            json_file = Path("./data/rooms_cache.json")
+            json_file.parent.mkdir(exist_ok=True)
+
+            with open(json_file, "w", encoding="utf-8") as f:
+                json.dump(complete_data, f, ensure_ascii=False, indent=2)
+
+            logger.success(f"JSON缓存已更新: {json_file.absolute()}")
+            return True
+
+        except Exception as e:
+            logger.error(f"更新JSON缓存失败: {e}")
+            return False
 
     async def query_rooms(self) -> dict:
         """获取所有可用房间"""
@@ -164,15 +249,26 @@ class LibraryAPIClient:
                 },
             )
 
-            if not response or "content" not in response:
-                logger.error("Invalid response format from category_list")
+            # 检查响应格式 - 登录后的响应格式不同
+            if "content" in response:
+                data_key = "content"
+            elif "DATA" in response:
+                data_key = "DATA"
+            else:
+                logger.error(
+                    f"Invalid response format from category_list. Response keys: {list(response.keys()) if response else 'None'}"
+                )
+                if response:
+                    logger.info(f"Full response: {response}")
                 return rooms
 
             # 安全地访问嵌套数据
             try:
-                room_items = response["content"]["children"][1]["defaultItems"]
+                room_items = response[data_key]["children"][1]["defaultItems"]
+
             except (KeyError, IndexError) as e:
                 logger.error(f"Failed to extract room items from response: {e}")
+                logger.info(f"Full response: {response}")
                 return rooms
 
             for room in room_items:
@@ -187,7 +283,7 @@ class LibraryAPIClient:
 
                     query_params = parse_qs(parsed_url.query)
                     params = {k: v[0] for k, v in query_params.items() if v}
-                    params["LAB_JSON"] = "1"
+                    params.update({"LAB_JSON": "1"})
 
                     room_data = await self.request("get", "search_seats", params=params)
 
@@ -256,45 +352,9 @@ class LibraryAPIClient:
 
                 floors = {}
                 try:
-                    if "allContent" not in response:
-                        continue
-
-                    all_content = response["allContent"]
-                    if (
-                        "children" not in all_content
-                        or len(all_content["children"]) < 3
-                    ):
-                        continue
-
-                    # 尝试不同的数据结构路径
-                    floor_children = []
-
-                    print(response)
-
-                    # for path in possible_paths:
-                    #     try:
-                    #         current = all_content
-                    #         for key in path:
-                    #             if isinstance(key, int):
-                    #                 current = current[key]
-                    #             else:
-                    #                 current = current[key]
-
-                    #         if isinstance(current, list) and len(current) > 0:
-                    #             floor_children = current
-                    #             break
-                    #     except (KeyError, IndexError, TypeError):
-                    #         continue
-
-                    if not floor_children:
-                        # 调试：打印完整的allContent结构
-                        import json
-
-                        logger.error(
-                            f"No floor data found for {room_name}: {json.dumps(all_content, indent=2, ensure_ascii=False)[:1000]}..."
-                        )
-
-                    floor_count = 0
+                    floor_children = response["allContent"]["children"][2]["children"][
+                        "children"
+                    ]
                     for floor in floor_children:
                         if not isinstance(floor, dict):
                             continue
@@ -308,18 +368,18 @@ class LibraryAPIClient:
                         pois = seat_map.get("POIs", [])
                         seat_map_info = seat_map.get("info", {})
 
-                        seats_dict = {
-                            poi["title"]: poi["id"]
-                            for poi in pois
-                            if isinstance(poi, dict) and "title" in poi and "id" in poi
-                        }
                         floors[floor_name] = {
-                            "seats": seats_dict,
+                            "seats": {
+                                poi["title"]: poi["id"]
+                                for poi in pois
+                                if isinstance(poi, dict)
+                                and "title" in poi
+                                and "id" in poi
+                            },
                             "seat_id": seat_map_info.get("id")
                             if isinstance(seat_map_info, dict)
                             else None,
                         }
-                        floor_count += 1
 
                 except (KeyError, IndexError, TypeError) as e:
                     logger.error(f"Error parsing floors for {room_name}: {e}")
